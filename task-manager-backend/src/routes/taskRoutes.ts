@@ -1,19 +1,16 @@
 // src/routes/taskRoutes.ts
 import { Router } from 'express';
-import { createTask, getTasks, getTaskById, updateTask } from '../controllers/taskController';
+import { createTask, getAllTasks, getTaskById, updateTask, deleteTask } from '../controllers/taskController';
+import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
-// Create a new task
+router.use(authenticateToken);
+
 router.post('/', createTask);
-
-// Get all tasks
-router.get('/', getTasks);
-
-// Get a task by ID
+router.get('/',getAllTasks);
 router.get('/:id', getTaskById);
-
-// Update a task by ID
 router.put('/:id', updateTask);
+router.delete('/:id', deleteTask);
 
 export default router;

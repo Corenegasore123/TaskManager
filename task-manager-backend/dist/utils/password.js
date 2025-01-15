@@ -8,23 +8,19 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.User = void 0;
-// src/models/userModel.ts
-const pg_1 = require("pg");
-const client = new pg_1.Client();
-class User {
-    static create(name, email, password) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const result = yield client.query('INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING *', [name, email, password]);
-            return result.rows[0];
-        });
-    }
-    static getAll() {
-        return __awaiter(this, void 0, void 0, function* () {
-            const result = yield client.query('SELECT * FROM users');
-            return result.rows;
-        });
-    }
-}
-exports.User = User;
+exports.comparePassword = exports.hashPassword = void 0;
+// src/utils/password.ts
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const hashPassword = (password) => __awaiter(void 0, void 0, void 0, function* () {
+    const salt = yield bcryptjs_1.default.genSalt(10);
+    return bcryptjs_1.default.hash(password, salt);
+});
+exports.hashPassword = hashPassword;
+const comparePassword = (password, hashedPassword) => __awaiter(void 0, void 0, void 0, function* () {
+    return bcryptjs_1.default.compare(password, hashedPassword);
+});
+exports.comparePassword = comparePassword;

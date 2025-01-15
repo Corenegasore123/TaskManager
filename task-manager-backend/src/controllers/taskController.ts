@@ -1,75 +1,166 @@
 // src/controllers/taskController.ts
-import { Request, Response } from 'express';
-import { successResponse, errorResponse } from '../utils/responseFormatter';
-import { isValidPriority, isValidStatus } from '../utils/validator';
-import client from '../config/db';
+import { Response } from 'express';
+import { pool } from '../config/database';
+import { AuthRequest } from '../types';
 
-export const createTask = async (req: Request, res: Response): Promise<void> => {
-  const { title, description, deadline, priority, status, assigned_to } = req.body;
-
-  if (!isValidPriority(priority)) {
-    res.status(400).json(errorResponse('Invalid priority value'));
-    return;
-  }
-  if (!isValidStatus(status)) {
-    res.status(400).json(errorResponse('Invalid status value'));
-    return;
-  }
-
+export const createTask = async (req: AuthRequest, res: Response) => {
   try {
-    const result = await client.query(
-      'INSERT INTO tasks (title, description, deadline, priority, status, assigned_to) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [title, description, deadline, priority, status, assigned_to]
-    );
-    res.status(201).json(successResponse('Task created successfully', result.rows[0]));
-  } catch (err) {
-    res.status(500).json(errorResponse('Error creating task', err));
-  }
-};
+    const { title, description, status, priority, deadline } = req.body;
+    const userId = req.user?.id;
 
-export const getTasks = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const result = await client.query('SELECT * FROM tasks');
-    res.status(200).json(successResponse('Tasks fetched successfully', result.rows));
-  } catch (err) {
-    res.status(500).json(errorResponse('Error fetching tasks', err));
-  }
-};
-
-export const getTaskById = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
-
-  try {
-    const result = await client.query('SELECT * FROM tasks WHERE id = $1', [id]);
-    if (result.rows.length === 0) {
-      res.status(404).json(errorResponse('Task not found'));
-      return;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
     }
-    res.status(200).json(successResponse('Task fetched successfully', result.rows[0]));
-  } catch (err) {
-    res.status(500).json(errorResponse('Error fetching task', err));
+
+    const result = await pool.query(
+      'INSERT INTO tasks (title, description, status, priority, deadline, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [title, description, status, priority, deadline, userId]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Error creating task' });
   }
 };
 
-export const updateTask = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const { title, description, deadline, priority, status, assigned_to } = req.body;
-
+export const getAllTasks = async (req: AuthRequest, res: Response) => {
   try {
-    const result = await client.query(
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const result = await pool.query(
+      'SELECT * FROM tasks WHERE user_id = $1 ORDER BY created_at DESC',
+      [userId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching tasks' });
+  }
+};
+
+export const getTaskById = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Validate id is a number
+    const taskId = parseInt(id);
+    if (isNaN(taskId)) {
+      return res.status(400).json({ error: 'Invalid task ID' });
+    }
+
+    const result = await pool.query(
+      'SELECT * FROM tasks WHERE id = $1 AND user_id = $2',
+      [taskId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching task' });
+  }
+};
+
+export const updateTask = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { title, description, status, priority, deadline } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Validate id is a number
+    const taskId = parseInt(id);
+    if (isNaN(taskId)) {
+      return res.status(400).json({ error: 'Invalid task ID' });
+    }
+
+    // Validate status
+    const validStatuses = ['TODO', 'IN_PROGRESS', 'COMPLETED'];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status value' });
+    }
+
+    // Validate priority
+    const validPriorities = ['LOW', 'MEDIUM', 'HIGH'];
+    if (priority && !validPriorities.includes(priority)) {
+      return res.status(400).json({ error: 'Invalid priority value' });
+    }
+
+    // First check if the task exists and belongs to the user
+    const checkResult = await pool.query(
+      'SELECT * FROM tasks WHERE id = $1 AND user_id = $2',
+      [taskId, userId]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    // Update the task
+    const result = await pool.query(
       `UPDATE tasks 
-       SET title = $1, description = $2, deadline = $3, priority = $4, status = $5, assigned_to = $6
-       WHERE id = $7 RETURNING *`,
-      [title, description, deadline, priority, status, assigned_to, id]
+       SET title = COALESCE($1, title),
+           description = COALESCE($2, description),
+           status = COALESCE($3, status),
+           priority = COALESCE($4, priority),
+           deadline = COALESCE($5, deadline)
+       WHERE id = $6 AND user_id = $7
+       RETURNING *`,
+      [title, description, status, priority, deadline, taskId, userId]
     );
 
-    if (result.rows.length === 0) {
-      res.status(404).json(errorResponse('Task not found'));
-      return;
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Error updating task' });
+  }
+};
+
+export const deleteTask = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    res.status(200).json(successResponse('Task updated successfully', result.rows[0]));
-  } catch (err) {
-    res.status(500).json(errorResponse('Error updating task', err));
+    // Validate id is a number
+    const taskId = parseInt(id);
+    if (isNaN(taskId)) {
+      return res.status(400).json({ error: 'Invalid task ID' });
+    }
+
+    // First check if the task exists and belongs to the user
+    const checkResult = await pool.query(
+      'SELECT id FROM tasks WHERE id = $1 AND user_id = $2',
+      [taskId, userId]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    // Delete the task
+    await pool.query('DELETE FROM tasks WHERE id = $1 AND user_id = $2', [
+      taskId,
+      userId
+    ]);
+
+    res.json({ message: 'Task deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error deleting task' });
   }
 };

@@ -1,19 +1,15 @@
-// src/routes/userRoutes.ts
 import { Router } from 'express';
-import { createUser, getUsers, getUserById, updateUser } from '../controllers/userController';
+import { register, login, getUserById, updatePassword } from '../controllers/userController';
+import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
-// Create a new user
-router.post('/', createUser);
+// Public routes
+router.post('/auth/register', register);
+router.post('/auth/login', login);
 
-// Get all users
-router.get('/', getUsers);
-
-// Get a user by ID
-router.get('/:id', getUserById);
-
-// Update a user by ID
-router.put('/:id', updateUser);
+// Protected routes
+router.get('/users/:id', authenticateToken, getUserById);
+router.put('/users/:id/password', authenticateToken, updatePassword);
 
 export default router;
